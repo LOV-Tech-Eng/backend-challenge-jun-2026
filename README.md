@@ -6,6 +6,135 @@ REST API for CloudCart's risk team to prioritize dispute responses.
 
 ---
 
+## Live URLs
+
+| | URL |
+|-|-----|
+| **Repository** | https://github.com/LOV-Tech-Eng/backend-challenge-jun-2026 |
+| **Live API (Railway)** | _Railway deploy requires interactive browser login — see deploy instructions below_ |
+| **Swagger UI (local)** | http://localhost:8080/swagger-ui.html |
+
+> **Railway deploy note:** The multi-stage `Dockerfile` and `railway.toml` are included in the repo.
+> To deploy: install the Railway CLI (`brew install railway`), run `railway login`, then
+> `railway link` (create a new project) and `railway up`. The healthcheck is wired to `/actuator/health`.
+> A Railway account token set as `RAILWAY_TOKEN` env var enables CI-based deploys without browser login.
+
+---
+
+## Release Plan — Test Evidence
+
+All 12 cases executed against the local service (commit on `main`, 2026-06-28). Service started in 2.04 s,
+seeded 150 disputes. **12 / 12 PASS. 0 FAIL.**
+
+| # | Case | Method + Path | HTTP Status | Key Assertion | Result |
+|---|------|--------------|-------------|---------------|--------|
+| 1 | Health check | `GET /actuator/health` | 200 | `{"status":"UP"}` | PASS |
+| 2 | Ingest Processor A | `POST /api/v1/disputes/ingest/processor-a` | 201 | `reasonCategory=PRODUCT_NOT_RECEIVED`, `winProbability=70`, `recommendedAction=CONTEST`, `scoringReason` present | PASS |
+| 3 | Idempotency re-ingest | `POST /api/v1/disputes/ingest/processor-a` (same payload) | 200 | Same `id` returned, no duplicate row | PASS |
+| 4 | Ingest Processor B | `POST /api/v1/disputes/ingest/processor-b` | 201 | `reasonCategory=FRAUD`, `currency=BRL`, `amount=3500.0` (350000 cents ÷ 100) | PASS |
+| 5 | Validation error | `POST /api/v1/disputes/ingest/processor-a` (empty/invalid fields) | 400 | `code=VALIDATION_ERROR`, `violations` array with 7 field errors | PASS |
+| 6 | List disputes paginated | `GET /api/v1/disputes?page=0&size=5` | 200 | `totalElements=152`, `content` has 5 items | PASS |
+| 7 | Combined filters | `GET /api/v1/disputes?merchantId=MERCHANT_001&reasonCategory=FRAUD&urgencyLevel=HIGH&minAmount=500` | 200 | All 4 returned items satisfy all filter constraints | PASS |
+| 8 | Merchant summary | `GET /api/v1/merchants/MERCHANT_001/summary` | 200 | `totalDisputeCount=35`, `averageWinProbability=46.43`, all breakdown keys present | PASS |
+| 9 | Global summary with filter | `GET /api/v1/disputes/summary?reasonCategory=FRAUD` | 200 | `totalDisputeCount=40`, all summary keys present | PASS |
+| 10 | 404 structured error | `GET /api/v1/disputes/00000000-0000-0000-0000-000000000000` | 404 | `code=DISPUTE_NOT_FOUND`, no stack trace | PASS |
+| 11 | Pagination validation | `GET /api/v1/disputes?size=0` | 400 | `code=INVALID_PAGINATION`, descriptive message | PASS |
+| 12 | Email masking | Response from Case 2 | — | `customerEmail=cu***@example.com` (raw `customer@example.com` not exposed) | PASS |
+
+### Selected verbatim responses
+
+**Case 2 — Ingest Processor A (201)**
+```json
+{
+  "id": "68899cb0-8936-409c-a192-ec692301049a",
+  "processorId": "PROCESSOR_A",
+  "processorDisputeId": "RELEASE-PA-001",
+  "merchantId": "MERCHANT_RELEASE",
+  "amount": 1200.0,
+  "currency": "USD",
+  "reasonCode": "13.1",
+  "reasonCategory": "PRODUCT_NOT_RECEIVED",
+  "disputeDate": "2026-06-20",
+  "transactionDate": "2026-06-10",
+  "responseDeadline": "2026-07-15",
+  "customerEmail": "cu***@example.com",
+  "orderId": "ORDER-RELEASE",
+  "status": "OPEN",
+  "winProbability": 70,
+  "recommendedAction": "CONTEST",
+  "urgencyLevel": "LOW",
+  "scoringReason": "Base: PRODUCT_NOT_RECEIVED(50) + amount>=\u00241000(+10) + deadline>=10days(+10) = 70 -> CONTEST",
+  "createdAt": "2026-06-28T19:49:27.092806"
+}
+```
+
+**Case 4 — Ingest Processor B (201)**
+```json
+{
+  "id": "44b28a11-211e-40d8-aa74-b71612b25279",
+  "processorId": "PROCESSOR_B",
+  "processorDisputeId": "RELEASE-PB-001",
+  "merchantId": "MERCHANT_RELEASE",
+  "amount": 3500.0,
+  "currency": "BRL",
+  "reasonCode": "4837",
+  "reasonCategory": "FRAUD",
+  "disputeDate": "2026-06-18",
+  "transactionDate": "2026-06-05",
+  "responseDeadline": "2026-07-10",
+  "customerEmail": "co***@example.com.br",
+  "status": "OPEN",
+  "winProbability": 40,
+  "recommendedAction": "ACCEPT",
+  "urgencyLevel": "LOW",
+  "scoringReason": "Base: FRAUD(20) + amount>=\u00241000(+10) + deadline>=10days(+10) = 40 -> ACCEPT",
+  "createdAt": "2026-06-28T19:49:42.675135"
+}
+```
+
+**Case 5 — Validation error (400)**
+```json
+{
+  "status": 400,
+  "error": "BAD_REQUEST",
+  "code": "VALIDATION_ERROR",
+  "message": "Request validation failed. See violations for details.",
+  "violations": [
+    {"field": "merchantId",        "message": "merchantId is required"},
+    {"field": "transactionAmount", "message": "transactionAmount must be positive"},
+    {"field": "disputeId",         "message": "disputeId is required"},
+    {"field": "currencyCode",      "message": "currencyCode must be one of: USD, BRL, MXN, COP"},
+    {"field": "dueDate",           "message": "dueDate is required"},
+    {"field": "chargebackDate",    "message": "chargebackDate is required"},
+    {"field": "reasonCode",        "message": "reasonCode is required"}
+  ]
+}
+```
+
+**Case 10 — 404 (DISPUTE_NOT_FOUND)**
+```json
+{
+  "status": 404,
+  "error": "NOT_FOUND",
+  "code": "DISPUTE_NOT_FOUND",
+  "message": "Dispute not found: 00000000-0000-0000-0000-000000000000"
+}
+```
+
+**Case 11 — Pagination validation (400)**
+```json
+{
+  "status": 400,
+  "error": "BAD_REQUEST",
+  "code": "INVALID_PAGINATION",
+  "message": "page must be >= 0 and size must be between 1 and 100 (got page=0, size=0)"
+}
+```
+
+---
+
+---
+
 ## Quick Reference (start here)
 
 | What | Where |
@@ -45,7 +174,7 @@ curl -s "http://localhost:8080/api/v1/disputes?merchantId=MERCHANT_001&reasonCat
 
 ```bash
 # 1. Clone the repo
-git clone <repo-url> && cd backend-challenge-jun-2026
+git clone https://github.com/LOV-Tech-Eng/backend-challenge-jun-2026 && cd backend-challenge-jun-2026
 
 # 2. Build and run all tests
 mvn clean verify
@@ -350,6 +479,19 @@ Test coverage:
 
 ## Links
 
-- **Repository**: _(submitted GitHub URL)_
-- **Live API**: _(Railway deploy URL — time-permitting)_
-- **Swagger UI**: `http://localhost:8080/swagger-ui.html` (local) or `<railway-url>/swagger-ui.html`
+- **Repository**: https://github.com/LOV-Tech-Eng/backend-challenge-jun-2026
+- **Live API**: Deploy to Railway using the included `Dockerfile` + `railway.toml` (`railway login && railway link && railway up`)
+- **Swagger UI**: `http://localhost:8080/swagger-ui.html` (local) or `<railway-url>/swagger-ui.html` after deploy
+
+### Railway deploy (one-time setup)
+
+```bash
+brew install railway
+railway login          # opens browser for auth
+railway link           # link to a new or existing Railway project
+railway up             # builds from Dockerfile and deploys
+railway domain         # prints the public URL
+```
+
+The `Dockerfile` is a multi-stage build (Maven build → JRE runtime on Alpine). The `railway.toml`
+wires the healthcheck to `/actuator/health` with a 60-second timeout.
