@@ -11,13 +11,8 @@ REST API for CloudCart's risk team to prioritize dispute responses.
 | | URL |
 |-|-----|
 | **Repository** | https://github.com/LOV-Tech-Eng/backend-challenge-jun-2026 |
-| **Live API (Railway)** | _Railway deploy requires interactive browser login — see deploy instructions below_ |
-| **Swagger UI (local)** | http://localhost:8080/swagger-ui.html |
-
-> **Railway deploy note:** The multi-stage `Dockerfile` and `railway.toml` are included in the repo.
-> To deploy: install the Railway CLI (`brew install railway`), run `railway login`, then
-> `railway link` (create a new project) and `railway up`. The healthcheck is wired to `/actuator/health`.
-> A Railway account token set as `RAILWAY_TOKEN` env var enables CI-based deploys without browser login.
+| **Live API (Railway)** | https://backend-challenge-jun-2026-production.up.railway.app |
+| **Swagger UI** | https://backend-challenge-jun-2026-production.up.railway.app/swagger-ui.html |
 
 ---
 
@@ -139,9 +134,9 @@ seeded 150 disputes. **12 / 12 PASS. 0 FAIL.**
 
 | What | Where |
 |------|-------|
-| **Swagger UI** (interactive docs) | `http://localhost:8080/swagger-ui.html` |
-| **Health check** | `http://localhost:8080/actuator/health` |
-| **OpenAPI JSON** | `http://localhost:8080/v3/api-docs` |
+| **Swagger UI** (interactive docs) | https://backend-challenge-jun-2026-production.up.railway.app/swagger-ui.html |
+| **Health check** | https://backend-challenge-jun-2026-production.up.railway.app/actuator/health |
+| **OpenAPI JSON** | https://backend-challenge-jun-2026-production.up.railway.app/v3/api-docs |
 
 **Data loads automatically.** Starting the service seeds 150+ realistic disputes across 5 merchants,
 4 currencies, and 5 reason categories — no manual import step. See [Test Data](#test-data).
@@ -480,8 +475,8 @@ Test coverage:
 ## Links
 
 - **Repository**: https://github.com/LOV-Tech-Eng/backend-challenge-jun-2026
-- **Live API**: Deploy to Railway using the included `Dockerfile` + `railway.toml` (`railway login && railway link && railway up`)
-- **Swagger UI**: `http://localhost:8080/swagger-ui.html` (local) or `<railway-url>/swagger-ui.html` after deploy
+- **Live API**: https://backend-challenge-jun-2026-production.up.railway.app
+- **Swagger UI**: https://backend-challenge-jun-2026-production.up.railway.app/swagger-ui.html
 
 ### Railway deploy (one-time setup)
 
