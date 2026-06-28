@@ -44,7 +44,7 @@ server:
     include-message: never
     include-stacktrace: never
     include-exception: false
-    include-binding-errors: on_param
+    include-binding-errors: never
 
 springdoc:
   api-docs:

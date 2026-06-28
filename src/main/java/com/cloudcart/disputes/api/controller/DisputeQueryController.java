@@ -53,8 +53,11 @@ public class DisputeQueryController {
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int size) {
 
-        if (size > 100) size = 100;
-        if (page < 0) page = 0;
+        if (size < 1 || size > 100 || page < 0) {
+            throw new com.cloudcart.disputes.infra.config.InvalidPaginationException(
+                "page must be ≥ 0 and size must be between 1 and 100 (got page=" + page + ", size=" + size + ")"
+            );
+        }
 
         Page<Dispute> result = queryService.findDisputes(
             merchantId, reasonCategory, recommendedAction, urgencyLevel,

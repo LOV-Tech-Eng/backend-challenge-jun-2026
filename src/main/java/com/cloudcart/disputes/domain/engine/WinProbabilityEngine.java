@@ -131,8 +131,14 @@ public class WinProbabilityEngine {
         // deadline == today, meaning the window has not yet closed.
         if (days < 0) return RecommendedAction.ACCEPT;
 
-        // Rule 2: deadline imminent, but still winnable → flag for immediate human review
-        if (days <= DEADLINE_URGENT && probability >= 40) return RecommendedAction.URGENT_REVIEW;
+        // Rule 2: deadline imminent, still winnable, and amount worth contesting → urgent human review.
+        // Amount guard is required here: without it, a $30 dispute with high base score (e.g.
+        // DUPLICATE_PROCESSING=65) and 1 day left would escalate to URGENT_REVIEW, bypassing the
+        // trivial-amount check in Rule 3 entirely. The amount guard must precede the prob check
+        // to ensure both conditions are evaluated.
+        if (days <= DEADLINE_URGENT
+                && probability >= 40
+                && amount.compareTo(AMOUNT_MIN_TO_CONTEST) >= 0) return RecommendedAction.URGENT_REVIEW;
 
         // Rule 3: low probability or trivial amount → not worth contesting
         if (probability < 40 || amount.compareTo(AMOUNT_MIN_TO_CONTEST) < 0) return RecommendedAction.ACCEPT;

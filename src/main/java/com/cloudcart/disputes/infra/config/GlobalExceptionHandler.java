@@ -36,9 +36,18 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(HttpMessageNotReadableException.class)
     public ResponseEntity<ErrorResponse> handleUnreadable(HttpMessageNotReadableException ex) {
-        String message = "Malformed JSON or invalid field value: " + sanitize(ex.getMessage());
+        // Log internally but never surface Jackson internals (class names, field paths) to callers.
+        log.debug("Unreadable HTTP message: {}", ex.getMessage());
         return ResponseEntity.badRequest().body(
-            ErrorResponse.of(400, "BAD_REQUEST", "INVALID_REQUEST_BODY", message)
+            ErrorResponse.of(400, "BAD_REQUEST", "INVALID_REQUEST_BODY",
+                "Malformed JSON or unrecognisable field value.")
+        );
+    }
+
+    @ExceptionHandler(InvalidPaginationException.class)
+    public ResponseEntity<ErrorResponse> handleInvalidPagination(InvalidPaginationException ex) {
+        return ResponseEntity.badRequest().body(
+            ErrorResponse.of(400, "BAD_REQUEST", "INVALID_PAGINATION", ex.getMessage())
         );
     }
 

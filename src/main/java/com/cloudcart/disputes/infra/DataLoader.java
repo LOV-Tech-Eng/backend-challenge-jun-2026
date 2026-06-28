@@ -124,10 +124,6 @@ public class DataLoader implements CommandLineRunner {
         List<ProcessorARequest> records = new ArrayList<>();
 
         // MERCHANT_001 (Brazil, BRL) — mix of FRAUD heavy (40 records)
-        String[] fraudCodes   = {"10.4", "4837", "10.1", "4863"};
-        String[] productCodes = {"13.1", "4855", "13.3", "4853"};
-        String[] subCodes     = {"13.2", "4841"};
-        String[] dupCodes     = {"12.6", "4834"};
 
         // Expired disputes (deadline in the past)
         records.add(pa("PA-M1-001", "MERCHANT_001", "250.00", "BRL", "10.4", -30, -30));
