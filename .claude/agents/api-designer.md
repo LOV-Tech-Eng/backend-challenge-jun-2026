@@ -27,7 +27,8 @@ production code.
    + `@Validated`): a blank `Idempotency-Key:` slips through as `""` and makes every blank-key request collide.
 4. **DTOs** — fields, types, required/optional, validation constraints. Money is **integer minor units +
    ISO-4217**, never `double`/`float` (`long` minor units for a payment/router/gateway API; **`BigDecimal`**
-   for a ledger/accounting/reconciliation domain). Card data tokenized/masked, never echoed raw. The response must let the
+   for a ledger/accounting/reconciliation domain) — in a real system, align the choice with
+   the surrounding microservices' convention. Card data tokenized/masked, never echoed raw. The response must let the
    evaluator **observe what happened in every state** — include the routing/decision outcome, the attempt
    log, and the reason **even for FAILED/declined** payments; never drop fields needed to see the behavior.
 5. **Error model** — one envelope with machine-readable `code` + human `message`. Map: validation → `400`,

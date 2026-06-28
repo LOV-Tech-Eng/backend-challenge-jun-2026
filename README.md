@@ -208,11 +208,18 @@ Step 4: Clamp result to [0, 100]
 Step 5: Urgency — ≤ 3 days (or expired) → HIGH | 4–10 days → MEDIUM | > 10 days → LOW
 
 Step 6: Recommended action (first match wins)
-  expired (≤ 0 days)         → ACCEPT      (cannot contest after deadline)
+  days < 0 (past deadline)   → ACCEPT      (cannot contest — window is closed)
+  days == 0 (today)          → falls through to URGENT_REVIEW if prob ≥ 40
   ≤ 3 days AND prob ≥ 40     → URGENT_REVIEW
   prob < 40 OR amount < $50  → ACCEPT
   prob ≥ 60                  → CONTEST
   else                       → ACCEPT
+
+Note: expired disputes (deadline passed) are classified as urgencyLevel=HIGH and
+recommendedAction=ACCEPT. HIGH urgency signals that the merchant's attention is still
+needed (acknowledge the loss, update records, investigate root cause). ACCEPT means
+"do not attempt to contest" — the card network window has closed, not that the
+dispute is unimportant.
 ```
 
 Each response includes a `scoringReason` field with a human-readable breakdown
