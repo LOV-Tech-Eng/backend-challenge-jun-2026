@@ -5,6 +5,7 @@ import com.cloudcart.disputes.domain.engine.WinProbabilityEngine;
 import com.cloudcart.disputes.domain.model.Dispute;
 import com.cloudcart.disputes.domain.model.DisputeStatus;
 import com.cloudcart.disputes.domain.port.DisputeRepository;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -77,8 +78,27 @@ public class DisputeIngestionService {
         dispute.setUrgencyLevel(scoring.urgencyLevel());
         dispute.setScoringReason(scoring.reason());
 
-        Dispute saved = repository.save(dispute);
-        return new IngestResult(saved, true);
+        // ──── Concurrency safety net ─────────────────────────────────────────────────────
+        // The application-level check above is sufficient under normal load (READ_COMMITTED
+        // isolation on H2). Under concurrent requests with the same natural key, two threads
+        // can both pass the check and race to insert. The DB unique constraint on
+        // (processor_id, processor_dispute_id) catches this and throws DataIntegrityViolationException.
+        //
+        // We handle it here rather than letting it propagate as a 500: read back the winner's
+        // row and return it as a successful idempotent response (200, not 201).
+        // This is the "optimistic idempotency" pattern — check → insert → catch-on-conflict → re-read.
+        try {
+            Dispute saved = repository.save(dispute);
+            return new IngestResult(saved, true);
+        } catch (DataIntegrityViolationException e) {
+            // Lost the race — another thread inserted first. Return their record (idempotent).
+            return new IngestResult(
+                repository.findByProcessorIdAndProcessorDisputeId(
+                    dispute.getProcessorId(), dispute.getProcessorDisputeId()
+                ).orElseThrow(() -> e), // re-throw only if somehow not found (should never happen)
+                false
+            );
+        }
     }
 
     /**

@@ -396,6 +396,13 @@ one new endpoint + DTO + normalizer method — no existing logic changes.
 
 The natural key `(processorId, processorDisputeId)` enforces deduplication at both the application
 layer (check-then-insert) and database layer (unique constraint). First ingest → `201 Created`.
+Re-ingest of the same key → `200 OK`, existing record returned. Duplicate ingestions are treated
+as idempotent requests — the expected pattern for payment processor integrations.
+
+Under concurrent requests, two threads can both pass the application-level check and race to insert.
+The DB unique constraint catches this and throws `DataIntegrityViolationException`, which the service
+handles by reading back the winner's row and returning `200 OK` — so concurrent duplicates are also
+idempotent, not 500s. This is the optimistic idempotency pattern (check → insert → catch-on-conflict → re-read).
 Re-ingest of the same key → `200 OK` with the existing record. No duplicate disputes are ever created.
 
 ### Trade-offs made for the 2-hour scope
