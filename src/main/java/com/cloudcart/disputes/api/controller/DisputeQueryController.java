@@ -80,22 +80,46 @@ public class DisputeQueryController {
 
     @GetMapping("/disputes/summary")
     @Operation(
-        summary = "Get summary statistics",
-        description = "Returns aggregate statistics. If merchantId is provided, scoped to that merchant; " +
-                      "otherwise returns global stats across all merchants."
+        summary = "Get summary statistics with optional filters",
+        description = "Returns aggregate statistics over any combination of filters. " +
+                      "All parameters are optional. Examples: " +
+                      "no params = global summary; " +
+                      "merchantId only = merchant summary; " +
+                      "reasonCategory=FRAUD = all fraud disputes; " +
+                      "urgencyLevel=HIGH + recommendedAction=CONTEST = urgent contested disputes."
     )
     public ResponseEntity<MerchantSummaryResponse> getSummary(
-            @Parameter(description = "Merchant ID (optional — omit for global summary)")
-            @RequestParam(required = false) String merchantId) {
-        return ResponseEntity.ok(queryService.getSummary(merchantId));
+            @Parameter(description = "Filter by merchant ID")
+            @RequestParam(required = false) String merchantId,
+            @Parameter(description = "Filter by reason category")
+            @RequestParam(required = false) ReasonCategory reasonCategory,
+            @Parameter(description = "Filter by recommended action")
+            @RequestParam(required = false) RecommendedAction recommendedAction,
+            @Parameter(description = "Filter by urgency level")
+            @RequestParam(required = false) UrgencyLevel urgencyLevel,
+            @Parameter(description = "Filter by status")
+            @RequestParam(required = false) DisputeStatus status,
+            @Parameter(description = "Dispute date on or after (YYYY-MM-DD)")
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate dateFrom,
+            @Parameter(description = "Dispute date on or before (YYYY-MM-DD)")
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate dateTo,
+            @Parameter(description = "Minimum transaction amount (inclusive)")
+            @RequestParam(required = false) BigDecimal minAmount) {
+        return ResponseEntity.ok(queryService.getSummary(
+            merchantId, reasonCategory, recommendedAction, urgencyLevel,
+            status, dateFrom, dateTo, minAmount
+        ));
     }
 
     @GetMapping("/merchants/{merchantId}/summary")
     @Operation(
-        summary = "Get merchant summary statistics",
-        description = "Returns dispute statistics for a specific merchant: count, volume, win probability, breakdown by reason/action/urgency."
+        summary = "Get merchant summary (convenience alias)",
+        description = "Equivalent to GET /disputes/summary?merchantId={merchantId}. " +
+                      "Returns dispute statistics scoped to a single merchant."
     )
     public ResponseEntity<MerchantSummaryResponse> getMerchantSummary(@PathVariable String merchantId) {
-        return ResponseEntity.ok(queryService.getSummary(merchantId));
+        return ResponseEntity.ok(queryService.getSummary(
+            merchantId, null, null, null, null, null, null, null
+        ));
     }
 }

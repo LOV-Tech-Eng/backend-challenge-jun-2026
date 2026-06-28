@@ -11,6 +11,10 @@ import java.util.Map;
 public record MerchantSummaryResponse(
     String merchantId,
     int totalDisputeCount,
+    // Monetary totals are broken down per currency to avoid meaningless cross-currency sums
+    // (USD + COP would be nonsensical without FX normalization).
+    // TODO (production): expose a normalized total using FX rates, with the per-currency
+    // breakdown retained for transparency.
     Map<Currency, BigDecimal> totalAmountAtRisk,
     Map<Currency, BigDecimal> totalVolume,
     double averageWinProbability,

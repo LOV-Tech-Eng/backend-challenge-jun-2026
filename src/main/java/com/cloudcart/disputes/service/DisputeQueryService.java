@@ -59,11 +59,30 @@ public class DisputeQueryService {
             .orElseThrow(() -> DisputeNotFoundException.forDisputeId(id.toString()));
     }
 
+    /**
+     * Returns aggregate statistics over any combination of filters.
+     * All parameters are optional — omitting all returns global stats across every dispute.
+     * Examples:
+     *   getSummary(null, null, null, null, ...) → global summary
+     *   getSummary("MERCHANT_001", null, null, null, ...) → single merchant
+     *   getSummary(null, FRAUD, null, null, ...) → all fraud disputes
+     *   getSummary("MERCHANT_001", null, URGENT_REVIEW, HIGH, ...) → urgent contested for merchant
+     */
     @Transactional(readOnly = true)
-    public MerchantSummaryResponse getSummary(String merchantId) {
-        Specification<Dispute> spec = merchantId != null
-            ? DisputeSpecifications.withFilters(merchantId, null, null, null, null, null, null, null)
-            : (root, query, cb) -> cb.conjunction();
+    public MerchantSummaryResponse getSummary(
+            String merchantId,
+            ReasonCategory reasonCategory,
+            RecommendedAction recommendedAction,
+            UrgencyLevel urgencyLevel,
+            DisputeStatus status,
+            LocalDate dateFrom,
+            LocalDate dateTo,
+            BigDecimal minAmount) {
+
+        Specification<Dispute> spec = DisputeSpecifications.withFilters(
+            merchantId, reasonCategory, recommendedAction, urgencyLevel,
+            status, dateFrom, dateTo, minAmount
+        );
 
         List<Dispute> disputes = repository.findAll(spec);
 

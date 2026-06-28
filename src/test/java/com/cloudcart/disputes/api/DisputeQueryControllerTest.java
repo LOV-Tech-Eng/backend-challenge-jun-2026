@@ -148,10 +148,33 @@ class DisputeQueryControllerTest {
     }
 
     @Test
-    void globalSummary_returnsAllDisputes() throws Exception {
+    void globalSummary_noFilters_returnsAllDisputes() throws Exception {
         mvc.perform(get("/api/v1/disputes/summary"))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.totalDisputeCount").value(6));
+    }
+
+    @Test
+    void summary_filteredByMerchantId_equivalentToMerchantEndpoint() throws Exception {
+        mvc.perform(get("/api/v1/disputes/summary").param("merchantId", "M1"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.totalDisputeCount").value(3));
+    }
+
+    @Test
+    void summary_filteredByReasonCategory_countsOnlyFraud() throws Exception {
+        mvc.perform(get("/api/v1/disputes/summary").param("reasonCategory", "FRAUD"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.totalDisputeCount").value(2)); // M1 FRAUD + M2 FRAUD
+    }
+
+    @Test
+    void summary_combinedFilters_merchantAndCategory() throws Exception {
+        mvc.perform(get("/api/v1/disputes/summary")
+                .param("merchantId", "M2")
+                .param("reasonCategory", "FRAUD"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.totalDisputeCount").value(1));
     }
 
     // ---- Test fixture builder ----
