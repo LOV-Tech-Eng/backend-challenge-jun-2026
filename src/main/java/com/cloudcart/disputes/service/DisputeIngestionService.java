@@ -45,8 +45,25 @@ public class DisputeIngestionService {
         // Compute days until deadline (negative = expired)
         long daysUntilDeadline = ChronoUnit.DAYS.between(LocalDate.now(), dispute.getResponseDeadline());
 
-        // Determine status
-        dispute.setStatus(daysUntilDeadline <= 0 ? DisputeStatus.EXPIRED : DisputeStatus.OPEN);
+        // ──── Business rule: deadline expiration boundary ────────────────────────────────
+        // The challenge defines response deadlines as LocalDate values, not timestamps.
+        // When ChronoUnit.DAYS.between(today, deadline) == 0, "today IS the deadline" —
+        // the card-network contest window has not yet closed.
+        //
+        // Risk-aware design principle: a dispute management system should ALWAYS prefer
+        // to preserve the merchant's opportunity to contest rather than prematurely
+        // classifying a dispute as a lost cause.
+        //
+        // Decision (intentional, not incidental):
+        //   daysUntilDeadline < 0  → EXPIRED  (deadline was yesterday or earlier; window closed)
+        //   daysUntilDeadline == 0 → OPEN     (deadline is today; merchant still has the day)
+        //   daysUntilDeadline > 0  → OPEN     (clearly within the window)
+        //
+        // Trade-off accepted: a dispute expiring at midnight tonight will be flagged as
+        // OPEN + HIGH urgency + URGENT_REVIEW for one calendar day. This is preferable to
+        // incorrectly classifying a still-actionable dispute as EXPIRED and silently dropping
+        // the contest opportunity.
+        dispute.setStatus(daysUntilDeadline < 0 ? DisputeStatus.EXPIRED : DisputeStatus.OPEN);
 
         // Score the dispute
         ScoringResult scoring = scoringEngine.score(

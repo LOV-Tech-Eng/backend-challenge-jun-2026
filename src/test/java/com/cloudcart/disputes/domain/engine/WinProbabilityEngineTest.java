@@ -4,6 +4,7 @@ import com.cloudcart.disputes.domain.model.ReasonCategory;
 import com.cloudcart.disputes.domain.model.RecommendedAction;
 import com.cloudcart.disputes.domain.model.UrgencyLevel;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
@@ -81,9 +82,11 @@ class WinProbabilityEngineTest {
         BigDecimal amt = new BigDecimal("200.00"); // +0 amount mod
         return Stream.of(
             // days, expectedProb, expectedUrgency, expectedAction
-            Arguments.of(-5L,  50, UrgencyLevel.HIGH,   RecommendedAction.ACCEPT),        // expired
-            Arguments.of(-1L,  50, UrgencyLevel.HIGH,   RecommendedAction.ACCEPT),        // expired
-            Arguments.of(0L,   50, UrgencyLevel.HIGH,   RecommendedAction.ACCEPT),        // deadline today = expired
+            Arguments.of(-5L,  50, UrgencyLevel.HIGH,   RecommendedAction.ACCEPT),        // days < 0: expired → ACCEPT
+            Arguments.of(-1L,  50, UrgencyLevel.HIGH,   RecommendedAction.ACCEPT),        // days < 0: expired → ACCEPT
+            // days == 0: deadline is TODAY — not expired, merchant still has the day.
+            // Modifier: 0 falls into the 0-4 day bucket → -10. prob = 50-10 = 40. URGENT_REVIEW.
+            Arguments.of(0L,   40, UrgencyLevel.HIGH,   RecommendedAction.URGENT_REVIEW), // today: OPEN, HIGH, URGENT_REVIEW
             Arguments.of(1L,   40, UrgencyLevel.HIGH,   RecommendedAction.URGENT_REVIEW), // 1 day: -10 → 40, prob>=40 → URGENT
             Arguments.of(2L,   40, UrgencyLevel.HIGH,   RecommendedAction.URGENT_REVIEW),
             Arguments.of(3L,   40, UrgencyLevel.HIGH,   RecommendedAction.URGENT_REVIEW), // boundary HIGH
@@ -154,11 +157,12 @@ class WinProbabilityEngineTest {
     }
 
     static Stream<Arguments> expiredCases() {
+        // Only days < 0 are truly expired (cannot contest).
+        // days == 0 (today) is NOT in this list — it's OPEN with URGENT_REVIEW.
         return Stream.of(
-            Arguments.of("Duplicate, expired", ReasonCategory.DUPLICATE_PROCESSING, -1L, new BigDecimal("3500.00")),
-            Arguments.of("Duplicate, expired exactly 0", ReasonCategory.DUPLICATE_PROCESSING, 0L, new BigDecimal("3500.00")),
+            Arguments.of("Duplicate, expired yesterday", ReasonCategory.DUPLICATE_PROCESSING, -1L, new BigDecimal("3500.00")),
             Arguments.of("Fraud, long expired", ReasonCategory.FRAUD, -30L, new BigDecimal("100.00")),
-            Arguments.of("Product, expired yesterday", ReasonCategory.PRODUCT_NOT_RECEIVED, -1L, new BigDecimal("1500.00"))
+            Arguments.of("Product, expired 2 days ago", ReasonCategory.PRODUCT_NOT_RECEIVED, -2L, new BigDecimal("1500.00"))
         );
     }
 
@@ -194,6 +198,48 @@ class WinProbabilityEngineTest {
                 ReasonCategory.SUBSCRIPTION_CANCELLED, new BigDecimal("600.00"), 3L,
                 35, RecommendedAction.ACCEPT, UrgencyLevel.HIGH)
         );
+    }
+
+    // ---- Boundary: days == 0 (today) vs days < 0 (yesterday / expired) ----
+    // Decision: ChronoUnit.DAYS.between(today, deadline) returns 0 when deadline == today.
+    // 0 means the window has NOT closed — the merchant still has the day. It is OPEN + URGENT_REVIEW.
+    // -1 (or less) means the deadline has passed. It is EXPIRED + ACCEPT.
+
+    @Test
+    void deadlineToday_isOpenAndUrgentReview_notExpired() {
+        // PRODUCT_NOT_RECEIVED, $200, days=0: base=50 + amount=+0 + today=-10 = 40
+        // 0 <= DEADLINE_URGENT(3) AND prob=40 >= 40 → URGENT_REVIEW, HIGH, NOT expired
+        ScoringResult result = engine.score(ReasonCategory.PRODUCT_NOT_RECEIVED,
+                                            new BigDecimal("200.00"), 0L);
+        assertThat(result.recommendedAction())
+            .as("deadline today should be URGENT_REVIEW, not ACCEPT")
+            .isEqualTo(RecommendedAction.URGENT_REVIEW);
+        assertThat(result.urgencyLevel()).isEqualTo(UrgencyLevel.HIGH);
+        assertThat(result.winProbability()).isEqualTo(40);
+    }
+
+    @Test
+    void deadlineYesterday_isExpiredAndAccept() {
+        // days == -1: clearly past deadline, cannot contest regardless of category
+        ScoringResult result = engine.score(ReasonCategory.DUPLICATE_PROCESSING,
+                                            new BigDecimal("3500.00"), -1L);
+        assertThat(result.recommendedAction())
+            .as("deadline yesterday must be ACCEPT (cannot contest)")
+            .isEqualTo(RecommendedAction.ACCEPT);
+        assertThat(result.urgencyLevel()).isEqualTo(UrgencyLevel.HIGH);
+    }
+
+    // ---- OTHER category: unknown reason code, conservative scoring ----
+
+    @Test
+    void other_baseScore_isConservativeNotFraud() {
+        // OTHER (base=30) must be distinct from FRAUD (base=20) —
+        // an unknown code is not evidence of fraud.
+        ScoringResult other = engine.score(ReasonCategory.OTHER, new BigDecimal("200.00"), 15L);
+        ScoringResult fraud = engine.score(ReasonCategory.FRAUD, new BigDecimal("200.00"), 15L);
+        assertThat(other.winProbability()).isEqualTo(40); // 30 + 0 + 10 = 40
+        assertThat(fraud.winProbability()).isEqualTo(30); // 20 + 0 + 10 = 30
+        assertThat(other.winProbability()).isGreaterThan(fraud.winProbability());
     }
 
     // ---- Determinism: same input always yields same result ----
