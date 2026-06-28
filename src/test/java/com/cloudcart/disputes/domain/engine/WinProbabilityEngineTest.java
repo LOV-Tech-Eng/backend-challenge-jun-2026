@@ -28,7 +28,10 @@ class WinProbabilityEngineTest {
     static Stream<Arguments> baseCategoryScores() {
         BigDecimal amt = new BigDecimal("200.00");
         long days = 10L;
-        // 10 days is within the 4-10 day MEDIUM bucket (>10 days = LOW)
+        // days=10 hits the ≥10days deadline bucket (+10 modifier) AND MEDIUM urgency (4–10).
+        // Urgency boundary: days ≤ 10 → MEDIUM (not LOW; LOW requires days > 10).
+        // Deadline modifier boundary: days ≥ 10 → +10 (comfortable bucket).
+        // Expected = base + 0 (amount<$500) + 10 (≥10days).
         return Stream.of(
             // category, amount, days, expectedProbability, expectedAction, expectedUrgency
             Arguments.of(ReasonCategory.FRAUD,                  amt, days, 30,  RecommendedAction.ACCEPT,        UrgencyLevel.MEDIUM),
@@ -93,7 +96,7 @@ class WinProbabilityEngineTest {
             Arguments.of(4L,   40, UrgencyLevel.MEDIUM, RecommendedAction.ACCEPT),        // 4 days: -10 → 40, not urgent (>3), <60 → ACCEPT
             Arguments.of(5L,   50, UrgencyLevel.MEDIUM, RecommendedAction.ACCEPT),        // 5 days: +0 → 50, <60 → ACCEPT
             Arguments.of(9L,   50, UrgencyLevel.MEDIUM, RecommendedAction.ACCEPT),        // boundary MEDIUM
-            Arguments.of(10L,  60, UrgencyLevel.MEDIUM, RecommendedAction.CONTEST),       // 10 days: 4-10 = MEDIUM, +10 → 60 → CONTEST
+            Arguments.of(10L,  60, UrgencyLevel.MEDIUM, RecommendedAction.CONTEST),       // 10 days: ≥10days bucket (+10) → 60, MEDIUM urgency → CONTEST
             Arguments.of(11L,  60, UrgencyLevel.LOW,    RecommendedAction.CONTEST),       // 11 days: >10 = LOW, +10 → 60 → CONTEST
             Arguments.of(20L,  60, UrgencyLevel.LOW,    RecommendedAction.CONTEST)
         );
@@ -198,6 +201,26 @@ class WinProbabilityEngineTest {
                 ReasonCategory.SUBSCRIPTION_CANCELLED, new BigDecimal("600.00"), 3L,
                 35, RecommendedAction.ACCEPT, UrgencyLevel.HIGH)
         );
+    }
+
+    // ---- Amount guard takes precedence over urgency rule for trivial amounts ----
+    // Regression test for BUG-04: Rule 2 (URGENT_REVIEW) must also check amount >= $50,
+    // otherwise a $30 dispute with high base score (DUPLICATE_PROCESSING=65) and 1 day left
+    // would escalate to URGENT_REVIEW bypassing the trivial-amount guard in Rule 3.
+
+    @Test
+    void urgentDeadline_trivialAmount_isAcceptNotUrgentReview() {
+        // DUPLICATE_PROCESSING base=65, $30 amount (<$50), 1 day left.
+        // Without amount guard: Rule 2 (days<=3, prob>=40) fires → URGENT_REVIEW (wrong).
+        // With amount guard:    Rule 2 skipped (amount<$50) → Rule 3 forces ACCEPT (correct).
+        // Prob = 65 + 0 (amount<$500) + (-10) (1-4days) = 55 — clearly ≥ 40, so guard is needed.
+        ScoringResult result = engine.score(ReasonCategory.DUPLICATE_PROCESSING,
+                                            new BigDecimal("30.00"), 1L);
+        assertThat(result.recommendedAction())
+            .as("trivial amount (<$50) must never produce URGENT_REVIEW even at urgent deadline")
+            .isEqualTo(RecommendedAction.ACCEPT);
+        assertThat(result.urgencyLevel()).isEqualTo(UrgencyLevel.HIGH); // urgency is still HIGH
+        assertThat(result.winProbability()).isEqualTo(55);
     }
 
     // ---- Boundary: days == 0 (today) vs days < 0 (yesterday / expired) ----

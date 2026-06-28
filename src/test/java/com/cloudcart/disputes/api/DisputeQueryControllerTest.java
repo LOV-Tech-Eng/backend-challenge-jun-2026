@@ -82,8 +82,11 @@ class DisputeQueryControllerTest {
 
     @Test
     void filterByMinAmount_returnsOnlyAboveThreshold() throws Exception {
+        // Seed has: M1-FRAUD=$500, M1-DUPLICATE=$1200, M2-FRAUD=$800 → 3 records >= $500
+        // Also verifies the predicate is >= (inclusive), not > (exclusive): $500 must be included.
         mvc.perform(get("/api/v1/disputes").param("minAmount", "500"))
             .andExpect(status().isOk())
+            .andExpect(jsonPath("$.totalElements").value(3))
             .andExpect(jsonPath("$.content[*].amount", everyItem(greaterThanOrEqualTo(500.0))));
     }
 
@@ -177,6 +180,72 @@ class DisputeQueryControllerTest {
             .andExpect(jsonPath("$.totalDisputeCount").value(1));
     }
 
+    // ---- Pagination validation (AC-22) ----
+
+    @Test
+    void pagination_sizeZero_returns400() throws Exception {
+        mvc.perform(get("/api/v1/disputes").param("size", "0"))
+            .andExpect(status().isBadRequest())
+            .andExpect(jsonPath("$.code").value("INVALID_PAGINATION"));
+    }
+
+    @Test
+    void pagination_sizeAbove100_returns400() throws Exception {
+        mvc.perform(get("/api/v1/disputes").param("size", "101"))
+            .andExpect(status().isBadRequest())
+            .andExpect(jsonPath("$.code").value("INVALID_PAGINATION"));
+    }
+
+    @Test
+    void pagination_negativePageNumber_returns400() throws Exception {
+        mvc.perform(get("/api/v1/disputes").param("page", "-1"))
+            .andExpect(status().isBadRequest())
+            .andExpect(jsonPath("$.code").value("INVALID_PAGINATION"));
+    }
+
+    // ---- Error path: non-UUID id and invalid enum param ----
+
+    @Test
+    void getById_nonUuidPath_returns400() throws Exception {
+        mvc.perform(get("/api/v1/disputes/not-a-uuid"))
+            .andExpect(status().isBadRequest())
+            .andExpect(jsonPath("$.code").value("INVALID_PARAMETER"));
+    }
+
+    @Test
+    void filterByInvalidReasonCategory_returns400() throws Exception {
+        mvc.perform(get("/api/v1/disputes").param("reasonCategory", "GARBAGE"))
+            .andExpect(status().isBadRequest())
+            .andExpect(jsonPath("$.code").value("INVALID_PARAMETER"));
+    }
+
+    // ---- Date range filters (dateFrom / dateTo) ----
+
+    @Test
+    void filterByDateFrom_futureDate_returnsEmpty() throws Exception {
+        mvc.perform(get("/api/v1/disputes").param("dateFrom", LocalDate.now().plusDays(1).toString()))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.totalElements").value(0));
+    }
+
+    @Test
+    void filterByDateTo_pastDate_returnsEmpty() throws Exception {
+        mvc.perform(get("/api/v1/disputes").param("dateTo", LocalDate.now().minusDays(10).toString()))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.totalElements").value(0));
+    }
+
+    @Test
+    void filterByDateRange_includesMatchingDisputes() throws Exception {
+        // All seed disputes have disputeDate = today - 5 days.
+        String date = LocalDate.now().minusDays(5).toString();
+        mvc.perform(get("/api/v1/disputes")
+                .param("dateFrom", date)
+                .param("dateTo", date))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.totalElements").value(6));
+    }
+
     // ---- Test fixture builder ----
 
     private Dispute dispute(String merchantId, String categoryName, String amount,
@@ -195,7 +264,8 @@ class DisputeQueryControllerTest {
 
         // Pre-compute scoring (mirrors what DisputeIngestionService does)
         long days = deadlineDaysFromNow;
-        d.setStatus(days <= 0 ? DisputeStatus.EXPIRED : DisputeStatus.OPEN);
+        // Mirror DisputeIngestionService exactly: days < 0 → EXPIRED, days == 0 → OPEN
+        d.setStatus(days < 0 ? DisputeStatus.EXPIRED : DisputeStatus.OPEN);
 
         com.cloudcart.disputes.domain.engine.WinProbabilityEngine engine =
             new com.cloudcart.disputes.domain.engine.WinProbabilityEngine();
