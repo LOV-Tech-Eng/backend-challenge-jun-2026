@@ -6,19 +6,52 @@ REST API for CloudCart's risk team to prioritize dispute responses.
 
 ---
 
+## Quick Reference (start here)
+
+| What | Where |
+|------|-------|
+| **Swagger UI** (interactive docs) | `http://localhost:8080/swagger-ui.html` |
+| **Health check** | `http://localhost:8080/actuator/health` |
+| **OpenAPI JSON** | `http://localhost:8080/v3/api-docs` |
+
+**Data loads automatically.** Starting the service seeds 150+ realistic disputes across 5 merchants,
+4 currencies, and 5 reason categories — no manual import step. See [Test Data](#test-data).
+
+**Scoring at a glance:**
+```
+winProbability = base(category) + amountMod + deadlineMod   →  clamp [0, 100]
+
+base:  FRAUD=20  SUBSCRIPTION_CANCELLED=40  PRODUCT_NOT_RECEIVED=50
+       PRODUCT_UNACCEPTABLE=55  DUPLICATE_PROCESSING=65
+
+amountMod:   ≥$1000→+10  ≥$500→+5  else→+0
+deadlineMod: ≥10 days→+10  5-9 days→+0  1-4 days→-10  expired→+0
+
+urgency:   ≤3 days (or expired) → HIGH  |  4-10 days → MEDIUM  |  >10 days → LOW
+action:    expired → ACCEPT  |  ≤3 days + prob≥40 + amount≥$50 → URGENT_REVIEW
+           prob≥60 → CONTEST  |  else → ACCEPT
+```
+
+**Five-filter curl (copy-paste to verify everything works):**
+```bash
+curl -s "http://localhost:8080/api/v1/disputes?merchantId=MERCHANT_001&reasonCategory=FRAUD&urgencyLevel=HIGH&minAmount=500&page=0&size=5" | jq .
+```
+
+---
+
 ## Setup (< 5 steps)
 
-**Requirements:** Java 21, Maven 3.8+ (or use the included `./mvnw` wrapper).
+**Requirements:** Java 21, Maven 3.8+
 
 ```bash
 # 1. Clone the repo
 git clone <repo-url> && cd backend-challenge-jun-2026
 
 # 2. Build and run all tests
-./mvnw clean verify
+mvn clean verify
 
 # 3. Start the service (auto-seeds 150+ disputes at startup)
-./mvnw spring-boot:run
+mvn spring-boot:run
 
 # 4. Open Swagger UI
 open http://localhost:8080/swagger-ui.html
@@ -272,15 +305,15 @@ No manual data loading step needed — just start the service.
 ## Running Tests
 
 ```bash
-./mvnw test
+mvn test
 ```
 
 Test coverage:
-- `WinProbabilityEngineTest` — 44 table-driven unit tests covering all categories, amount boundaries,
+- `WinProbabilityEngineTest` — 47 table-driven unit tests covering all categories, amount boundaries,
   deadline boundaries, all three recommended actions, the expired-deadline trap, and determinism
-- `ProcessorNormalizerTest` — 17 tests covering field mapping and the cents-to-decimal conversion
+- `ProcessorNormalizerTest` — 18 tests covering field mapping and the cents-to-decimal conversion
 - `DisputeIngestionControllerTest` — 9 integration tests covering happy paths, idempotency, and validation
-- `DisputeQueryControllerTest` — 14 integration tests covering all filter combinations, pagination, 404s
+- `DisputeQueryControllerTest` — 25 integration tests covering all filter combinations, pagination, 404s, error paths, and date range filters
 
 ---
 
