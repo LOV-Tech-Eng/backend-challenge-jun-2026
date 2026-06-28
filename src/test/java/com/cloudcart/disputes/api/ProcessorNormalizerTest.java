@@ -9,6 +9,8 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
 
+import static org.assertj.core.api.Assertions.assertThatCode;
+
 import java.math.BigDecimal;
 import java.time.LocalDate;
 
@@ -156,9 +158,18 @@ class ProcessorNormalizerTest {
     }
 
     @Test
-    void unknownReasonCode_defaultsToFraud() {
-        // Conservative: unknown code → FRAUD (lowest base score, least likely to contest)
+    void unknownReasonCode_mapsToOther_notFraud() {
+        // Unknown code → OTHER (base score 30), not FRAUD (base score 20).
+        // Mapping to FRAUD would be semantically wrong: an unknown code is not evidence of fraud.
         ReasonCategory category = normalizer.mapReasonCode("UNKNOWN-CODE");
-        assertThat(category).isEqualTo(ReasonCategory.FRAUD);
+        assertThat(category).isEqualTo(ReasonCategory.OTHER);
+    }
+
+    @Test
+    void unknownReasonCode_10_9_doesNotThrow() {
+        // A real unknown code from a processor must not throw — just score conservatively.
+        assertThatCode(() -> normalizer.mapReasonCode("10.9"))
+            .doesNotThrowAnyException();
+        assertThat(normalizer.mapReasonCode("10.9")).isEqualTo(ReasonCategory.OTHER);
     }
 }

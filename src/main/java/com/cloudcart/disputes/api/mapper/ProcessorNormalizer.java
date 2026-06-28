@@ -93,8 +93,8 @@ public class ProcessorNormalizer {
     public ReasonCategory mapReasonCode(String reasonCode) {
         ReasonCategory category = REASON_CODE_MAP.get(reasonCode);
         if (category == null) {
-            log.warn("Unknown reason code '{}' — defaulting to FRAUD (conservative)", reasonCode);
-            return ReasonCategory.FRAUD;
+            log.warn("Unknown reason code '{}' — mapped to OTHER (base score 30)", reasonCode);
+            return ReasonCategory.OTHER;
         }
         return category;
     }

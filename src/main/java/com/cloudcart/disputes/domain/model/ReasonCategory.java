@@ -5,5 +5,7 @@ public enum ReasonCategory {
     PRODUCT_NOT_RECEIVED,
     PRODUCT_UNACCEPTABLE,
     DUPLICATE_PROCESSING,
-    SUBSCRIPTION_CANCELLED
+    SUBSCRIPTION_CANCELLED,
+    /** Reason code received from processor was not recognized. Scored conservatively. */
+    OTHER
 }
